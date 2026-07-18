@@ -315,6 +315,29 @@ pub async fn serve_internal(
         }
     };
 
+    // BL-6: bootstrap the configured admin as a RootAdmin account. Nothing else
+    // promotes it — a DID gets a `Standard` account on first auth and the session
+    // role is read straight from the stored account, so without this the
+    // configured `admin_did` can never perform admin operations (the Redis path
+    // provisions the admin inside `initialize_redis`; the fjall/pre-built-store
+    // path had no equivalent). Idempotent: `setup_admin_account` upgrades an
+    // existing account's role and adds it to the `admins` set.
+    if !config.admin_did.is_empty() {
+        let admin_hash = sha256::digest(&config.admin_did);
+        store
+            .setup_admin_account(
+                &admin_hash,
+                affinidi_messaging_mediator_common::types::accounts::AccountType::RootAdmin,
+                &config.security.global_acl_default,
+            )
+            .await
+            .map_err(|e| {
+                error!("Admin RootAdmin bootstrap failed for {}: {e}", config.admin_did);
+                e
+            })?;
+        info!("Bootstrapped RootAdmin account for admin_did {}", config.admin_did);
+    }
+
     // Optional signal handler — cancels the same token the caller
     // provided so the embedded path's caller-driven cancellation and
     // the binary's signal-driven cancellation share a code path.
