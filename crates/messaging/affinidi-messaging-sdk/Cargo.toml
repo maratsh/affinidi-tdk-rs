@@ -32,7 +32,10 @@ affinidi-crypto = { version = "0.2", features = ["jose"] }
 affinidi-messaging-didcomm = { path = "../affinidi-messaging-didcomm", version = "0.15" }
 ## Trust Tasks framework — typed request/response documents for the messaging
 ## tasks (ping / account / acl / access-list), carried over the binding envelope.
-trust-tasks-rs = "0.2"
+## 0.2.12 is the floor: this crate imports `trust_tasks_rs::specs::messaging`,
+## added in 0.2.12 — a stale lock re-resolved without --locked stays below it
+## unless the minimum says otherwise.
+trust-tasks-rs = "0.2.12"
 ## Optional: Trust Spanning Protocol (activated by the `tsp` feature)
 affinidi-tsp = { path = "../affinidi-tsp", version = "0.1", optional = true }
 ## Async trait support for the pluggable TSP `RelationshipStore` (tsp feature only).

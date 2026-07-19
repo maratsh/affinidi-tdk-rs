@@ -86,6 +86,12 @@ lto = true
 # Redirect crates.io deps to local workspace crates so all members use the same version.
 # Only needed for crates that are referenced by version (not path) in other workspace members.
 [patch.crates-io]
+# oid4vc pair: registry consumers (vta-sdk → affinidi-openid4vci ^0.1 oid4vc-core)
+# otherwise compile the REGISTRY copies, and a stale Cargo.lock can hold
+# oid4vc-core at 0.1.3 (< the 0.1.5 this source needs) — see the floor comments
+# in the two crates' manifests.
+affinidi-oid4vc-core = { path = "crates/protocols/affinidi-oid4vc-core" }
+affinidi-openid4vci = { path = "crates/protocols/affinidi-openid4vci" }
 affinidi-secrets-resolver = { path = "crates/core/affinidi-secrets-resolver" }
 affinidi-task-utils = { path = "crates/core/affinidi-task-utils" }
 affinidi-did-resolver-cache-sdk = { path = "crates/identity/affinidi-did-resolver-cache-sdk" }
