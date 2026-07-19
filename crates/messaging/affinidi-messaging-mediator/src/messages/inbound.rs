@@ -33,10 +33,43 @@ use tracing::{Instrument, debug, span};
 use super::{ProcessMessageResponse, WrapperType};
 
 pub(crate) async fn handle_inbound(
-    #[cfg_attr(not(feature = "didcomm"), allow(unused_variables))] state: &SharedData,
+    state: &SharedData,
     session: &Session,
     #[cfg_attr(not(feature = "didcomm"), allow(unused_variables))] message: &str,
 ) -> Result<InboundMessageResponse, MediatorError> {
+    // Per-DID rate limit — the message-submission flood control. This is the
+    // single ingress chokepoint: both the HTTP `/inbound` handler and the
+    // WebSocket receive loop funnel through here, so a WS-borne flood (which
+    // bypasses the per-request Session extractor after the one-time upgrade) is
+    // caught here too. No-op when `did_rate_limit_per_second` is 0 (the default).
+    //
+    // EXEMPT:
+    //  - Admin/RootAdmin/Mediator — the reconcile wrapper issues bursts of
+    //    short-TTL (~3s) admin messages on boot replay and must never be throttled.
+    //  - Empty did_hash — the anonymous inter-mediator relay session
+    //    (`ANON-INBOUND`) is unauthenticated and carries no DID; keying a per-DID
+    //    limiter on "" would lump all relay/anonymous traffic into one bucket and
+    //    let it self-throttle legitimate relay. That path is bounded by per-IP
+    //    rate limiting + relay-peer allow-listing + the recipient consent gate,
+    //    not per-DID.
+    let rate_limit_applies = crate::common::did_rate_limiter::per_did_rate_limit_applies(
+        session.account_type,
+        &session.did_hash,
+    );
+    if rate_limit_applies && !state.did_rate_limiter.check(&session.did_hash) {
+        return Err(MediatorError::problem(
+            crate::common::error_codes::RATE_LIMITED,
+            &session.session_id,
+            None,
+            ProblemReportSorter::Warning,
+            ProblemReportScope::Message,
+            "rate.limit.did",
+            "Per-DID rate limit exceeded; reduce request rate",
+            vec![],
+            StatusCode::TOO_MANY_REQUESTS,
+        ));
+    }
+
     // Try DIDComm first if enabled
     #[cfg(feature = "didcomm")]
     {

@@ -622,16 +622,40 @@ pub async fn serve_internal(
         tsp_identity: Arc::new(tokio::sync::OnceCell::new()),
     };
 
+    // Per-DID rate-limit store reclaim — the keyed limiter grows one entry per
+    // distinct DID, and under the open-but-hardened admission posture the key
+    // space is attacker-controlled (any not-blocked DID auto-creates), so an
+    // unbounded store is a memory-DoS vector under the exact abuse it bounds.
+    // Periodically drop idle (caught-up) keys. Only runs when enabled.
+    if config.limits.did_rate_limit_per_second > 0 {
+        let limiter = shared_state.did_rate_limiter.clone();
+        supervisor.spawn::<_, _, String>("did_rate_limit_reclaim", false, move || {
+            let limiter = limiter.clone();
+            async move {
+                const RECLAIM_INTERVAL: Duration = Duration::from_secs(60);
+                let mut tick = tokio::time::interval(RECLAIM_INTERVAL);
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tick.tick().await;
+                    limiter.retain_recent();
+                }
+            }
+        });
+    }
+
     let app: Router = application_routes(&api_prefix, &shared_state);
 
     let rate_limiter = RateLimiterState::new(
         config.limits.rate_limit_per_ip,
         config.limits.rate_limit_burst,
+        config.limits.trusted_proxies.clone(),
     );
     if config.limits.rate_limit_per_ip > 0 {
         info!(
-            "Rate limiting enabled: {} req/s per IP, burst: {}",
-            config.limits.rate_limit_per_ip, config.limits.rate_limit_burst,
+            "Rate limiting enabled: {} req/s per IP, burst: {}, trusted_proxies: {}",
+            config.limits.rate_limit_per_ip,
+            config.limits.rate_limit_burst,
+            config.limits.trusted_proxies.len(),
         );
     }
 

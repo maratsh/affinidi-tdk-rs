@@ -2,7 +2,26 @@ use affinidi_messaging_mediator_common::errors::MediatorError;
 // `LimitsConfigRaw` (the raw TOML schema) lives in the config crate; the
 // conversion to the typed `LimitsConfig` (a mediator-local type) stays here.
 use affinidi_messaging_mediator_config::LimitsConfigRaw;
+use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
+
+/// Parse a comma/whitespace-separated CIDR list into trusted-proxy networks.
+/// Invalid entries are logged and skipped (fail-safe: a bad entry never widens
+/// trust). A bare IP (no `/prefix`) is accepted as a single-host network.
+pub(crate) fn parse_trusted_proxies(raw: &str) -> Vec<IpNet> {
+    raw.split([',', ' ', '\t', '\n'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| {
+            s.parse::<IpNet>()
+                .or_else(|_| s.parse::<std::net::IpAddr>().map(IpNet::from))
+                .map_err(|_| {
+                    tracing::warn!("Ignoring invalid trusted_proxies entry: {s:?}");
+                })
+                .ok()
+        })
+        .collect()
+}
 
 /// Resource limits configuration for the mediator
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,6 +58,10 @@ pub struct LimitsConfig {
     pub did_rate_limit_per_second: u32,
     /// Burst size for per-DID rate limiting (additional requests allowed in a burst).
     pub did_rate_limit_burst: u32,
+    /// Trusted reverse-proxy networks. `X-Forwarded-For` is honored for per-IP
+    /// rate limiting ONLY when the socket peer is inside one of these; empty by
+    /// default (socket-peer only — never trust XFF blindly).
+    pub trusted_proxies: Vec<IpNet>,
 }
 
 impl Default for LimitsConfig {
@@ -68,6 +91,7 @@ impl Default for LimitsConfig {
             max_websocket_connections_per_did: 100,
             did_rate_limit_per_second: 0,
             did_rate_limit_burst: 10,
+            trusted_proxies: Vec::new(),
         }
     }
 }
@@ -189,6 +213,7 @@ impl std::convert::TryFrom<LimitsConfigRaw> for LimitsConfig {
                 warn_default("did_rate_limit_burst", "10");
                 10
             }),
+            trusted_proxies: parse_trusted_proxies(&raw.trusted_proxies),
         })
     }
 }
@@ -252,6 +277,7 @@ mod tests {
             max_websocket_connections_per_did: "250".to_string(),
             did_rate_limit_per_second: "50".to_string(),
             did_rate_limit_burst: "20".to_string(),
+            trusted_proxies: "10.0.0.0/8, 203.0.113.5".to_string(),
         };
         let limits = LimitsConfig::try_from(raw).unwrap();
         assert_eq!(limits.attachments_max_count, 5);
@@ -277,6 +303,12 @@ mod tests {
         assert_eq!(limits.max_websocket_connections, 5000);
         assert_eq!(limits.did_rate_limit_per_second, 50);
         assert_eq!(limits.did_rate_limit_burst, 20);
+        // A CIDR range and a bare host both parse; a bare IP becomes a /32.
+        assert_eq!(limits.trusted_proxies.len(), 2);
+        let in_range: std::net::IpAddr = "10.1.2.3".parse().unwrap();
+        let bare_host: std::net::IpAddr = "203.0.113.5".parse().unwrap();
+        assert!(limits.trusted_proxies[0].contains(&in_range));
+        assert!(limits.trusted_proxies[1].contains(&bare_host));
     }
 
     #[test]
@@ -307,10 +339,14 @@ mod tests {
             max_websocket_connections_per_did: "100".to_string(),
             did_rate_limit_per_second: "0".to_string(),
             did_rate_limit_burst: "10".to_string(),
+            // Mixed valid + garbage: invalid entries are skipped (fail-safe:
+            // a bad entry never widens the trusted set), valid ones survive.
+            trusted_proxies: "10.0.0.0/8, garbage, 2001:db8::/32".to_string(),
         };
         let limits = LimitsConfig::try_from(raw).unwrap();
         // Invalid values should fall back to unwrap_or defaults
         assert_eq!(limits.attachments_max_count, 20);
         assert_eq!(limits.crypto_operations_per_message, 1000);
+        assert_eq!(limits.trusted_proxies.len(), 2, "the garbage CIDR entry is dropped");
     }
 }

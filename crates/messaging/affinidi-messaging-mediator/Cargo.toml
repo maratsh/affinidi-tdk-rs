@@ -166,6 +166,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 # ── Rate Limiting & Resilience ───────────────────────────────────────────
 ## Per-IP and per-DID rate limiting (in-memory, not distributed)
 governor = "0.10"
+## Trusted-proxy CIDR matching for X-Forwarded-For client-IP extraction
+ipnet = { version = "2.12", features = ["serde"] }
 
 # ── HTTP Client (for forwarding to remote mediators) ─────────────────────
 reqwest = { version = "0.13", features = ["rustls", "json"] }

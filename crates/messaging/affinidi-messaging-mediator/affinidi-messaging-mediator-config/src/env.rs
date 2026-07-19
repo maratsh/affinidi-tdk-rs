@@ -163,6 +163,7 @@ pub fn apply_env_overrides(config: &mut ConfigRaw) {
         config.limits.did_rate_limit_burst,
         "LIMIT_DID_RATE_LIMIT_BURST"
     );
+    env_override!(config.limits.trusted_proxies, "LIMIT_TRUSTED_PROXIES");
 
     env_override!(
         config.processors.forwarding.enabled,

@@ -218,3 +218,6 @@ pub const FORWARD_LOOP_DETECTED: u16 = 94;
 
 /// Tried to remove a protected account (Mediator or RootAdmin).
 pub const PROTECTED_ACCOUNT_ERROR: u16 = 18;
+
+/// Per-DID rate limit exceeded (authenticated message-submission flood control).
+pub const RATE_LIMITED: u16 = 95;

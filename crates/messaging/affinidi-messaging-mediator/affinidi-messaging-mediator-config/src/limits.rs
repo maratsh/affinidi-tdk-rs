@@ -37,6 +37,14 @@ pub struct LimitsConfigRaw {
     pub did_rate_limit_per_second: String,
     #[serde(default = "default_did_rate_limit_burst")]
     pub did_rate_limit_burst: String,
+    /// Comma/whitespace-separated CIDR list of TRUSTED reverse proxies (e.g. the
+    /// bunny CDN edge range). `X-Forwarded-For` is honored for per-IP rate
+    /// limiting ONLY when the immediate socket peer is inside one of these ranges;
+    /// otherwise the socket peer IP is used and XFF is ignored. **Empty by default
+    /// (never trust XFF blindly)** — leaving it empty preserves socket-peer-only
+    /// behavior. Set it only after confirming the edge appends a trustworthy XFF.
+    #[serde(default = "default_trusted_proxies")]
+    pub trusted_proxies: String,
 }
 
 fn default_rate_limit_per_ip() -> String {
@@ -56,4 +64,7 @@ fn default_did_rate_limit_per_second() -> String {
 }
 fn default_did_rate_limit_burst() -> String {
     "10".to_string()
+}
+fn default_trusted_proxies() -> String {
+    String::new()
 }
